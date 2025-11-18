@@ -30,7 +30,7 @@ KLIPPER_DIR = Path("/usr/share/klipper")
 KLIPPER_EXTRAS_DIR = KLIPPER_DIR / "klippy" / "extras"
 ROOT_KLIPPER_EXTRAS_DIR = ROOT_HOME / "klipper" / "klippy" / "extras"
 SHAKETUNE_REPO = ROOT_HOME / "klippain_shaketune"
-SHAKETUNE_REPO_URL = "https://github.com/Frix-x/klippain-shaketune.git"
+SHAKETUNE_REPO_URL = "https://github.com/Jacob10383/klippain-shaketune.git"
 
 GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 PIWHEELS_LINE = "extra-index-url=https://www.piwheels.org/simple"
@@ -56,27 +56,6 @@ PYTHON_REQUIREMENTS = [
     "Pillow==10.3.0",
 ]
 
-RELOCATE_PACKAGES = [
-    "numpy",
-    "numpy-1.26.2.dist-info",
-    "scipy",
-    "scipy-1.11.4.dist-info",
-    "matplotlib",
-    "matplotlib-3.8.2.dist-info",
-    "PyWavelets",
-    "PyWavelets-1.6.0.dist-info",
-    "pillow",
-    "Pillow-10.3.0.dist-info",
-    "PIL",
-    "PIL-10.3.0.dist-info",
-    "contourpy",
-    "contourpy-1.2.0.dist-info",
-    "kiwisolver",
-    "kiwisolver-1.4.7.dist-info",
-    "zstandard",
-    "zstandard-0.23.0.dist-info",
-]
-
 
 def ensure_environment() -> bool:
     if not KLIPPY_ENV.exists():
@@ -86,6 +65,17 @@ def ensure_environment() -> bool:
         logger.error("Python interpreter missing in %s", KLIPPY_PYTHON)
         return False
     ensure_directory(ROOT_HOME)
+    ensure_directory(UDISK_SITE_PACKAGES)
+    
+    # Add .pth file to link UDISK packages
+    pth_file = SITE_PACKAGES / "shaketune_udisk.pth"
+    if SITE_PACKAGES.exists() and not pth_file.exists():
+        try:
+            pth_file.write_text(f"{UDISK_SITE_PACKAGES}\n")
+            logger.info("Created .pth file at %s to link UDISK packages", pth_file)
+        except Exception as exc:
+            logger.warning("Failed to create .pth file: %s", exc)
+            
     return True
 
 
@@ -213,41 +203,36 @@ def install_python_requirements() -> bool:
         logger.error("pip executable not found inside %s", KLIPPY_PIP)
         return False
 
-    logger.info("Installing Shake&Tune Python requirements via piwheels...")
-    command = [str(KLIPPY_PIP), "install", "--upgrade", *PYTHON_REQUIREMENTS]
+    # Use UDISK for temp and cache to avoid filling rootfs
+    udisk_tmp = Path("/mnt/UDISK/tmp")
+    udisk_cache = Path("/mnt/UDISK/.pip_cache")
+    ensure_directory(udisk_tmp)
+    ensure_directory(udisk_cache)
+
+    logger.info("Installing Shake&Tune Python requirements to UDISK...")
+    logger.info("Using TMPDIR=%s and Cache=%s", udisk_tmp, udisk_cache)
+
+    command = [
+        str(KLIPPY_PIP), "install",
+        "--upgrade",
+        "--progress-bar", "off",
+        "--target", str(UDISK_SITE_PACKAGES),
+        "--cache-dir", str(udisk_cache),
+        *PYTHON_REQUIREMENTS
+    ]
+    
+    
+    os.environ["TMPDIR"] = str(udisk_tmp)
+    
     returncode = shell.stream_command(command, prefix="pip")
+    
+    # Clean up env just in case
+    del os.environ["TMPDIR"]
+    
     if returncode != 0:
         logger.error("pip install failed")
         return False
     logger.info("pip install completed successfully")
-    return True
-
-
-def relocate_large_packages() -> bool:
-    if not SITE_PACKAGES.exists():
-        logger.warning("Site-packages directory not found at %s; skipping relocation", SITE_PACKAGES)
-        return False
-
-    ensure_directory(UDISK_SITE_PACKAGES)
-    moved_any = False
-
-    for pkg in RELOCATE_PACKAGES:
-        src = SITE_PACKAGES / pkg
-        if not src.exists() or src.is_symlink():
-            continue
-        dst = UDISK_SITE_PACKAGES / pkg
-        if dst.exists():
-            logger.debug("Destination already exists for %s; skipping move", pkg)
-            continue
-        logger.info("Moving %s to %s", src, dst)
-        shutil.move(str(src), str(dst))
-        src.symlink_to(dst)
-        moved_any = True
-
-    if moved_any:
-        logger.info("Relocated large site-packages to %s", UDISK_SITE_PACKAGES)
-    else:
-        logger.info("No packages required relocation")
     return True
 
 
@@ -365,8 +350,7 @@ def install_shaketune() -> bool:
     if not install_custom_shaper_calibrate():
         logger.warning("Failed to install patched shaper_calibrate.py; continuing")
 
-    if not relocate_large_packages():
-        logger.warning("Failed to relocate site-packages; continuing without relocation")
+
     create_cpython_symlinks()
 
     if not install_runtime_libs():
