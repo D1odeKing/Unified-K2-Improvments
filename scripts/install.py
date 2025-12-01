@@ -207,7 +207,7 @@ def main() -> None:
     valid_slugs = [c.slug for c in AVAILABLE_COMPONENTS]
     
     parser.add_argument(
-        "--components",
+        "-c", "--components",
         nargs="+",
         choices=valid_slugs,
         help="Specific components to install (default: all)",
