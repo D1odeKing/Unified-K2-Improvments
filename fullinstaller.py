@@ -104,7 +104,7 @@ class InstallerConfig:
     remote_bootstrap_archive_name: str = "bootstrap.tar.gz"
     remote_clone_dir: str = "~/Printer"
     remote_repo_url: str = "https://github.com/Jacob10383/Printer.git"
-    k2_script_path: str = "/mnt/UDISK/root/k2-improvements/gimme-the-jamin.sh"
+    k2_script_path: str = "/mnt/UDISK/root/k2-improvements/no-carto.sh"
     moonraker_database_dir: str = "/mnt/UDISK/root/printer_data/database"
     moonraker_service: str = "moonraker"
 
